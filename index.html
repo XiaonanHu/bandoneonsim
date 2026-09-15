@@ -6,26 +6,31 @@
 <title>Bandoneon Simulator</title>
 <style>
   :root{
-    --bg:#f5f0e6; --panel:#fffdf8; --panel2:#f0e8d9; --line:#ddd2bf;
-    --text:#2b241c; --dim:#7c6d59; --accent:#a8761c;
-    --open:#a67c00; --close:#c62828; --both:#00838f; --warn:#d84315;
-    --play:#558b2f;
+    --bg:#f7f3ed; --panel:#ffffff; --panel2:#f2eae0; --line:#d6c6b6;
+    --text:#231a13; --dim:#6d5a4b; --accent:#8f3b25;
+    --open:#96690a; --close:#b3261e; --both:#00838f; --warn:#d84315;
+    --play:#4e7d2a; --wood:#5a2c1a; --wood2:#6b3820; --cream:#f6dfae;
   }
   *{box-sizing:border-box}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
     font:14px/1.45 "Avenir Next","Segoe UI",system-ui,sans-serif}
+  #topbar{position:sticky;top:0;z-index:60;box-shadow:0 2px 10px rgba(60,28,14,.28)}
   header{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
-    padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
-  header h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.4px;color:var(--accent)}
-  header .sub{color:var(--dim);font-size:12px}
-  #song-title{font-size:14px;color:var(--text);font-weight:600}
+    padding:10px 16px;color:#f3e6d2;border-bottom:2px solid #3f1e10;
+    /* dark mahogany with a subtle wood-grain sheen */
+    background:
+      linear-gradient(rgba(255,255,255,.05),rgba(0,0,0,.14)),
+      repeating-linear-gradient(92deg,#63321d 0px,#5a2c1a 5px,#6b3820 11px,#572a17 18px)}
+  header h1{font-size:17px;margin:0;font-weight:700;letter-spacing:.4px;color:var(--cream)}
+  header .sub{color:#d9bd97;font-size:12px}
+  #song-title{font-size:14px;color:#fdf6e8;font-weight:600}
   button,select,label.filebtn{
     background:var(--panel2);color:var(--text);border:1px solid var(--line);
     border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer}
   button:hover,label.filebtn:hover{border-color:var(--accent)}
   button:disabled{opacity:.4;cursor:default}
-  button.primary{background:var(--accent);color:#fffdf8;border-color:var(--accent);font-weight:700}
-  button.toggled{background:#f3e2bb;border-color:var(--accent);color:#7a5510}
+  button.primary{background:var(--accent);color:#fff8ef;border-color:#6e2b18;font-weight:700}
+  button.toggled{background:#f6e2d4;border-color:var(--accent);color:#7c2f1b;font-weight:600}
   input[type=file]{display:none}
   input[type=range]{accent-color:var(--accent);vertical-align:middle}
   #controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
@@ -43,12 +48,13 @@
 
   /* keyboards */
   #keyboards{display:flex;gap:18px;justify-content:center;flex-wrap:wrap;margin-top:4px}
-  .kb{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 10px 4px}
-  .kb h3{margin:0 0 2px;font-size:13px;color:var(--dim);font-weight:600;text-align:center}
+  .kb{background:var(--panel);border:1px solid var(--line);border-top:3px solid var(--wood2);
+    border-radius:12px;padding:8px 10px 4px}
+  .kb h3{margin:0 0 2px;font-size:13.5px;color:#4a3526;font-weight:700;text-align:center}
   .kb h3 .dir{font-weight:700}
   .kb svg{display:block}
-  .btncirc{fill:#faf5ea;stroke:#b3a488;stroke-width:1.4;transition:fill .06s}
-  .btnlabel{fill:#3a3126;font-weight:600;pointer-events:none;user-select:none}
+  .btncirc{fill:#fcf8f1;stroke:#9c8265;stroke-width:1.5;transition:fill .06s}
+  .btnlabel{fill:#241a12;font-weight:600;pointer-events:none;user-select:none}
   .btnlabel2{fill:#8a7a66;pointer-events:none;user-select:none}
   g.btn{cursor:pointer}
   g.btn:hover .btncirc{stroke:var(--accent)}
@@ -81,11 +87,11 @@
   /* sheet view */
   #sheet-outer{display:none;margin:8px 0 12px;background:var(--panel);
     border:1px solid var(--line);border-radius:12px;padding:8px}
-  #sheet-scroll{max-height:380px;overflow:auto;border-radius:8px;cursor:pointer}
+  #sheet-scroll{max-height:290px;overflow:auto;border-radius:8px;cursor:pointer}
   #sheet-container{position:relative;background:#f7f1e4;min-height:60px}
-  #sheet-cursor{position:absolute;width:3px;background:rgba(200,120,20,.85);
+  #sheet-cursor{position:absolute;width:3px;background:rgba(143,59,37,.85);
     border-radius:2px;display:none;pointer-events:none;z-index:5;
-    box-shadow:0 0 6px rgba(217,164,65,.9);
+    box-shadow:0 0 6px rgba(179,86,52,.9);
     transition:left .06s linear,top .15s ease,height .15s ease}
   #sheet-hint{color:var(--dim);font-size:11px;margin:4px 4px 0}
   #warnings{margin-top:12px;display:none;background:var(--panel);border:1px solid var(--line);
@@ -98,6 +104,7 @@
 </style>
 </head>
 <body>
+<div id="topbar">
 <header>
   <h1>Bandoneon Simulator</h1>
   <span class="sub">142-button &middot; Rheinische Tonlage</span>
@@ -138,6 +145,7 @@
   <div class="ctl-group" id="part-group" style="display:none">
     <span class="lbl">Part</span><select id="part-select"></select>
   </div>
+</div>
 </div>
 
 <main>
@@ -223,7 +231,7 @@ function buildKeyboard(svgId, buttons, hand){
   const pts = buttons.map(b => hand==='right' ? {x:b.py, y:-b.px} : {x:-b.py, y:b.px});
   const xs = pts.map(p=>p.x), ys = pts.map(p=>p.y);
   const minX=Math.min(...xs), maxX=Math.max(...xs), minY=Math.min(...ys), maxY=Math.max(...ys);
-  const SC=1.55, R=17, PAD=26;
+  const SC=1.9, R=20, PAD=30;
   const W=(maxX-minX)*SC+PAD*2, H=(maxY-minY)*SC+PAD*2;
   const svg=document.getElementById(svgId);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
@@ -238,13 +246,13 @@ function buildKeyboard(svgId, buttons, hand){
     g.appendChild(c);
     const sameNote = b.o===b.c;
     const t1=document.createElementNS("http://www.w3.org/2000/svg","text");
-    t1.setAttribute("x",cx); t1.setAttribute("y",sameNote?cy+4:cy-1);
+    t1.setAttribute("x",cx); t1.setAttribute("y",sameNote?cy+5:cy-1.5);
     t1.setAttribute("text-anchor","middle");
-    t1.setAttribute("font-size",sameNote?"11":"9.5");
+    t1.setAttribute("font-size",sameNote?"13":"11.5");
     t1.setAttribute("class","btnlabel");
     const t2=document.createElementNS("http://www.w3.org/2000/svg","text");
-    t2.setAttribute("x",cx); t2.setAttribute("y",cy+9.5);
-    t2.setAttribute("text-anchor","middle"); t2.setAttribute("font-size","8.5");
+    t2.setAttribute("x",cx); t2.setAttribute("y",cy+11.5);
+    t2.setAttribute("text-anchor","middle"); t2.setAttribute("font-size","9.5");
     t2.setAttribute("class","btnlabel2");
     g.appendChild(t1); g.appendChild(t2);
     svg.appendChild(g);
@@ -755,7 +763,10 @@ function highlightMeasure(){
   document.querySelectorAll(".mcell.playing").forEach(el=>el.classList.remove("playing"));
   const el=document.getElementById("mc"+S.curSeq);
   if(el){ el.classList.add("playing");
-    el.scrollIntoView({inline:"center",block:"nearest",behavior:"smooth"}); }
+    // scroll only the strip horizontally — never the page (scrollIntoView
+    // was dragging the whole viewport down during playback)
+    const sc=document.getElementById("strip");
+    sc.scrollTo({left:Math.max(0,el.offsetLeft-sc.clientWidth/2+el.offsetWidth/2),behavior:"smooth"}); }
 }
 function updateNowPlaying(active){
   const el=document.getElementById("now-playing");
@@ -816,7 +827,7 @@ async function renderSheet(xmlText){
     Sheet.osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(cont,{
       autoResize:false, backend:"svg", drawTitle:false, drawComposer:false,
       drawPartNames:false, drawingParameters:"compact"});
-    Sheet.osmd.zoom=0.75;
+    Sheet.osmd.zoom=0.6;
     await Sheet.osmd.load(xmlText);
     Sheet.osmd.render();
     buildSheetSteps();
@@ -967,6 +978,8 @@ function setupPart(){
 }
 function setMode(mode,keepDirs){
   S.mode=mode;
+  const ab=document.getElementById("btn-alt");
+  ab.classList.remove("toggled"); ab.textContent="Alternate";
   document.getElementById("btn-mode-manual").classList.toggle("toggled",mode==='manual');
   document.getElementById("btn-mode-auto").classList.toggle("toggled",mode==='auto');
   if(mode==='auto'&&S.seq.length){ S.dirs=suggestDirections(); updateAllStripCells(); refreshLabels(); updateWarnings();
@@ -1006,11 +1019,16 @@ document.getElementById("btn-suggest").addEventListener("click",()=>{
   S.dirs=suggestDirections(); updateAllStripCells(); refreshLabels(); updateWarnings();
   if(S.playing) rescheduleFromCurrent();
 });
-document.getElementById("btn-alt").addEventListener("click",()=>{
+let altStart='close'; // toggles each click: close -> open -> close -> ...
+document.getElementById("btn-alt").addEventListener("click",function(){
   if(!S.seq.length) return;
   setMode('manual');
-  S.dirs=S.seq.map((_,i)=> i%2 ? 'close' : 'open');
-  updateAllStripCells(); refreshLabels(); updateWarnings();
+  altStart = altStart==='open' ? 'close' : 'open';
+  const other = altStart==='open' ? 'close' : 'open';
+  S.dirs=S.seq.map((_,i)=> i%2 ? other : altStart);
+  this.classList.add("toggled");
+  this.textContent = altStart==='open' ? "Alternate ⊓⊔" : "Alternate ⊔⊓";
+  updateAllStripCells(); refreshLabels(); updateWarnings(); updateNowPlaying([]);
   if(S.playing) rescheduleFromCurrent();
 });
 document.getElementById("part-select").addEventListener("change",function(){
