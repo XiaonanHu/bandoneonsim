@@ -6,7 +6,7 @@
 <title>Bandoneon Simulator</title>
 <style>
   :root{
-    --bg:#f7f3ed; --panel:#ffffff; --panel2:#f2eae0; --line:#d6c6b6;
+    --bg:#fdf9f2; --panel:#ffffff; --panel2:#f7f0e5; --line:#ddccb8;
     --text:#231a13; --dim:#6d5a4b; --accent:#8f3b25;
     --open:#96690a; --close:#b3261e; --both:#00838f; --warn:#d84315;
     --play:#4e7d2a; --wood:#5a2c1a; --wood2:#6b3820; --cream:#f6dfae;
@@ -136,8 +136,7 @@
     <span class="lbl">Bellows</span>
     <button id="btn-mode-manual" class="toggled" title="You set open/close per measure">Manual</button>
     <button id="btn-mode-auto" title="Automatically choose directions">Auto</button>
-    <button id="btn-suggest" title="Prefill the manual strip with a suggestion">Suggest</button>
-    <button id="btn-alt" title="Practice mode: alternate opening / closing every measure">Alternate</button>
+    <button id="btn-alt" title="Flip the bellows direction for the whole piece">&#8852; Close</button>
   </div>
   <div class="ctl-group">
     <button id="btn-sheet" class="toggled" disabled title="Show or hide the score">Sheet</button>
@@ -281,6 +280,8 @@ function refreshLabels(){
   document.getElementById("dir-right").textContent = S.seq.length? sym(dir): "—";
   document.getElementById("dir-left").style.color = dir==='close'? 'var(--close)':'var(--open)';
   document.getElementById("dir-right").style.color = dir==='close'? 'var(--close)':'var(--open)';
+  // The flip button always offers the OTHER direction than the keyboard shows.
+  document.getElementById("btn-alt").innerHTML = dir==='open' ? '&#8852; Close' : '&#8851; Open';
 }
 function clearHighlights(){
   for(const hand of ["right","left"]) for(const el of kbEls[hand])
@@ -978,8 +979,6 @@ function setupPart(){
 }
 function setMode(mode,keepDirs){
   S.mode=mode;
-  const ab=document.getElementById("btn-alt");
-  ab.classList.remove("toggled"); ab.textContent="Alternate";
   document.getElementById("btn-mode-manual").classList.toggle("toggled",mode==='manual');
   document.getElementById("btn-mode-auto").classList.toggle("toggled",mode==='auto');
   if(mode==='auto'&&S.seq.length){ S.dirs=suggestDirections(); updateAllStripCells(); refreshLabels(); updateWarnings();
@@ -1014,20 +1013,13 @@ document.getElementById("vol").addEventListener("input",function(){
 });
 document.getElementById("btn-mode-manual").addEventListener("click",()=>setMode('manual'));
 document.getElementById("btn-mode-auto").addEventListener("click",()=>setMode('auto'));
-document.getElementById("btn-suggest").addEventListener("click",()=>{
-  if(!S.seq.length) return;
-  S.dirs=suggestDirections(); updateAllStripCells(); refreshLabels(); updateWarnings();
-  if(S.playing) rescheduleFromCurrent();
-});
-let altStart='close'; // toggles each click: close -> open -> close -> ...
-document.getElementById("btn-alt").addEventListener("click",function(){
+// Manual bellows flip: keyboard starts in opening, so the button offers "Close".
+// Each click flips the whole piece's direction and the label shows the next flip.
+document.getElementById("btn-alt").addEventListener("click",()=>{
   if(!S.seq.length) return;
   setMode('manual');
-  altStart = altStart==='open' ? 'close' : 'open';
-  const other = altStart==='open' ? 'close' : 'open';
-  S.dirs=S.seq.map((_,i)=> i%2 ? other : altStart);
-  this.classList.add("toggled");
-  this.textContent = altStart==='open' ? "Alternate ⊓⊔" : "Alternate ⊔⊓";
+  const newDir = currentDir()==='open' ? 'close' : 'open';
+  S.dirs=S.seq.map(()=>newDir);
   updateAllStripCells(); refreshLabels(); updateWarnings(); updateNowPlaying([]);
   if(S.playing) rescheduleFromCurrent();
 });
