@@ -134,8 +134,7 @@
   </div>
   <div class="ctl-group">
     <span class="lbl">Bellows</span>
-    <button id="btn-mode-manual" class="toggled" title="You set open/close per measure">Manual</button>
-    <button id="btn-mode-auto" title="Automatically choose directions">Auto</button>
+    <button id="btn-mode" class="toggled" title="Bellows mode — click to switch">Manual</button>
     <button id="btn-alt" title="Flip the bellows direction for the whole piece">&#8852; Close</button>
   </div>
   <div class="ctl-group">
@@ -414,7 +413,7 @@ function parseScore(xmlText){
     const measureEls=[...pEl.querySelectorAll(":scope > measure")];
     measureEls.forEach((mEl,mi)=>{
       const M={number:mEl.getAttribute("number")||String(mi+1),divisions,notes:[],
-        harmony:[],tempos:[],length:0,repeatForward:false,repeatBackward:false,repeatTimes:2,
+        harmony:[],tempos:[],bows:[],length:0,repeatForward:false,repeatBackward:false,repeatTimes:2,
         endings:[],keyFifths};
       let cur=0, maxPos=0, lastOnset=0;
       for(const el of mEl.children){
@@ -457,6 +456,13 @@ function parseScore(xmlText){
             const voice=el.querySelector(":scope > voice")?.textContent||"1";
             const onset=isChord?lastOnset:cur;
             if(!isChord&&!isGrace){ lastOnset=cur; }
+            {
+              // Bow marks steer the bellows; record them even on rests so a
+              // mark placed anywhere in the measure is honored.
+              const mb=el.querySelector(":scope > notations technical > down-bow")?'down'
+                     :(el.querySelector(":scope > notations technical > up-bow")?'up':null);
+              if(mb) M.bows.push({pos:onset,bow:mb});
+            }
             if(!isRest){
               const pe=el.querySelector(":scope > pitch");
               if(pe){
@@ -465,7 +471,10 @@ function parseScore(xmlText){
                 const alter=+(pe.querySelector("alter")?.textContent||0);
                 const midi=STEP_SEMIS[step]+alter+(oct+1)*12+transpose;
                 const ties=[...el.querySelectorAll(":scope > tie")].map(t=>t.getAttribute("type"));
-                M.notes.push({onset,dur,midi,staff,voice,grace:isGrace,
+                // Violin bowing marks steer the bellows: down-bow = opening, up-bow = closing.
+                const bow=el.querySelector(":scope > notations technical > down-bow")?'down'
+                       :(el.querySelector(":scope > notations technical > up-bow")?'up':null);
+                M.notes.push({onset,dur,midi,staff,voice,grace:isGrace,bow,
                   tieStart:ties.includes("start"),tieStop:ties.includes("stop")});
                 part.noteCount++;
               }
@@ -565,7 +574,7 @@ function buildTimeline(){
       const t0=timeAt(n.onset);
       let d = n.grace ? Math.min(0.12, (timeAt(n.onset+M.divisions*0.25)-t0)) : (timeAt(n.onset+n.dur)-t0);
       const ev={t:n.grace?Math.max(mStart,t0-0.09):t0, dur:Math.max(d,0.06), midi:n.midi, hand, seqIdx:sIdx, grace:n.grace,
-        tieStart:n.tieStart,tieStop:n.tieStop};
+        bow:n.bow||null, tieStart:n.tieStart,tieStop:n.tieStop};
       const key=hand+"|"+n.midi;
       if(n.tieStop && tieOpen[key]){
         tieOpen[key].dur = (ev.t+ev.dur)-tieOpen[key].t; // extend
@@ -787,7 +796,13 @@ function rafLoop(){
   const t=scoreTime();
   const sIdx=S.loopBar?S.loopSeq:currentSeqIdxAt(t);
   if(sIdx!==S.curSeq){ S.curSeq=sIdx; refreshLabels(); highlightMeasure(); }
-  // active events
+  applyActiveAt(t);
+  updateSheetCursor(false);
+  requestAnimationFrame(rafLoop);
+}
+// Highlight the buttons for every note sounding at score-time t.
+// Used every frame during playback, and once on sheet clicks while paused.
+function applyActiveAt(t){
   clearHighlights();
   const active=[];
   // linear scan around; events sorted — simple filter is fine for our sizes
@@ -811,8 +826,7 @@ function rafLoop(){
     }
   }
   updateNowPlaying(active);
-  updateSheetCursor(false);
-  requestAnimationFrame(rafLoop);
+  return active;
 }
 
 /* ============================ SHEET VIEW (OSMD) ============================ */
@@ -907,7 +921,9 @@ function seekToStep(step){
   S.curSeq=sIdx; if(S.loopBar) S.loopSeq=sIdx;
   S.pausedAt=t;
   if(S.playing) startAt(t);
-  refreshLabels(); highlightMeasure(); updateSheetCursor(true); updateNowPlaying([]);
+  refreshLabels(); highlightMeasure(); updateSheetCursor(true);
+  // While paused, show the finger positions for the clicked note(s).
+  if(!S.playing) applyActiveAt(t+0.01); else updateNowPlaying([]);
 }
 document.getElementById("sheet-scroll").addEventListener("click",e=>{
   if(!Sheet.ready||!S.seq.length) return;
@@ -966,12 +982,31 @@ async function loadFile(file){
     console.error(err);
   }
 }
+function hasBowMarks(){
+  const ms=S.score?.parts[S.partIdx]?.measures||[];
+  return ms.some(m=>m.bows&&m.bows.length);
+}
+function bowDirections(){
+  // Each bow mark sets the direction from its measure onward (last mark in a
+  // measure wins for that measure). Before the first mark: opening.
+  const ms=S.score.parts[S.partIdx].measures;
+  let cur='open';
+  return S.seq.map(item=>{
+    const bows=ms[item.mIdx].bows;
+    if(bows&&bows.length) cur=bows[bows.length-1].bow==='down'?'open':'close';
+    return cur;
+  });
+}
+function autoDirections(){ return hasBowMarks()? bowDirections() : suggestDirections(); }
 function setupPart(){
   stopPlayback();
   buildTimeline();
   snapshotRaw();
   rebuildScaled();
-  S.dirs=S.mode==='auto'? suggestDirections() : new Array(S.seq.length).fill('open');
+  // Bow marks in the score select Auto automatically; otherwise Manual.
+  S.mode = hasBowMarks() ? 'auto' : 'manual';
+  updateModeButton();
+  S.dirs=S.mode==='auto'? autoDirections() : new Array(S.seq.length).fill('open');
   S.curSeq=0; S.pausedAt=0;
   // pick flats if key has flats
   S.useFlats=(S.seq[0]?.keyFifths??0)<0;
@@ -979,10 +1014,18 @@ function setupPart(){
 }
 function setMode(mode,keepDirs){
   S.mode=mode;
-  document.getElementById("btn-mode-manual").classList.toggle("toggled",mode==='manual');
-  document.getElementById("btn-mode-auto").classList.toggle("toggled",mode==='auto');
-  if(mode==='auto'&&S.seq.length){ S.dirs=suggestDirections(); updateAllStripCells(); refreshLabels(); updateWarnings();
+  updateModeButton();
+  if(mode==='auto'&&S.seq.length){ S.dirs=autoDirections(); updateAllStripCells(); refreshLabels(); updateWarnings();
     if(S.playing) rescheduleFromCurrent(); }
+}
+function updateModeButton(){
+  const b=document.getElementById("btn-mode");
+  b.textContent=S.mode==='auto'?'Auto':'Manual';
+  b.title=S.mode==='auto'
+    ? (S.events&&hasBowMarks()
+        ? "Bellows follow the bow marks in the score (down-bow ⊓ open, up-bow ⊔ close) — click for Manual"
+        : "Directions chosen automatically — click for Manual")
+    : "You set open/close with the flip button or the bellows strip — click for Auto";
 }
 
 /* ============================ WIRING ============================ */
@@ -1011,8 +1054,7 @@ document.getElementById("tempo").addEventListener("input",function(){
 document.getElementById("vol").addEventListener("input",function(){
   if(S.master) S.master.gain.value=this.value/100;
 });
-document.getElementById("btn-mode-manual").addEventListener("click",()=>setMode('manual'));
-document.getElementById("btn-mode-auto").addEventListener("click",()=>setMode('auto'));
+document.getElementById("btn-mode").addEventListener("click",()=>setMode(S.mode==='auto'?'manual':'auto'));
 // Manual bellows flip: keyboard starts in opening, so the button offers "Close".
 // Each click flips the whole piece's direction and the label shows the next flip.
 document.getElementById("btn-alt").addEventListener("click",()=>{
