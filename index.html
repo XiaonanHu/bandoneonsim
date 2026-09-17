@@ -101,6 +101,47 @@
   footer{padding:14px 16px;color:#8a7a66;font-size:11px}
   footer a{color:#7c6d59}
   #loading-samples{color:var(--dim);font-size:12px}
+  /* Tools dropdown (top-right) */
+  #tools-menu{margin-left:auto;position:relative}
+  #tools-btn{background:rgba(255,255,255,.10);color:#f3e6d2;border:1px solid rgba(246,223,174,.5)}
+  #tools-btn:hover{border-color:var(--cream);background:rgba(255,255,255,.18)}
+  #tools-menu ul{list-style:none;margin:0;padding:4px;position:absolute;display:none;
+    background:#fffdf8;border:1px solid var(--line);border-radius:8px;
+    box-shadow:0 6px 18px rgba(60,28,14,.28);min-width:172px;z-index:90}
+  #tools-dd{right:0;top:calc(100% + 5px)}
+  #tools-menu li{position:relative;padding:7px 12px;border-radius:6px;color:var(--text);
+    font-size:13px;cursor:pointer;white-space:nowrap;user-select:none}
+  #tools-menu li:hover{background:#f6ead9}
+  #tools-menu li.dim-item{color:var(--dim);cursor:default}
+  #tools-menu li.dim-item:hover{background:none}
+  #tools-menu li.has-sub > ul{right:100%;top:-5px}       /* submenus fly out leftwards */
+  #tools-menu li.has-sub:hover > ul,
+  #tools-menu li.has-sub.open > ul{display:block}
+  #tools-menu.open > #tools-dd{display:block}
+  .scale-list{max-height:330px;overflow-y:auto}
+  #tools-menu li.active-scale{background:#f0d9c9;font-weight:700}
+  /* scale path overlay */
+  .scale-overlay{pointer-events:none}
+  g.btn.scalestep .btncirc{stroke:#8f3b25;stroke-width:3}
+  .lvl-legend{display:none;justify-content:center;align-items:center;gap:6px;
+    margin:2px 0 6px;flex-wrap:wrap}
+  .lvl-lab{font-size:11.5px;color:var(--dim)}
+  .lvl-chip{font-size:11px;padding:2px 10px;border-radius:12px;border:1.5px solid var(--c);
+    background:#fff;color:var(--c);cursor:pointer;opacity:.45}
+  .lvl-chip.on{background:var(--c);color:#fff;opacity:1}
+  /* feedback dialog */
+  #tools-menu li.menu-sep{border-top:1px solid var(--line);border-radius:0 0 6px 6px;margin-top:3px;padding-top:9px}
+  #fb-overlay{display:none;position:fixed;inset:0;background:rgba(40,20,10,.45);
+    z-index:200;align-items:center;justify-content:center;padding:16px}
+  #fb-overlay.show{display:flex}
+  #fb-box{background:#fffdf8;border:1px solid var(--line);border-top:4px solid var(--accent);
+    border-radius:12px;padding:18px 20px;max-width:460px;width:100%;box-shadow:0 10px 30px rgba(60,28,14,.35)}
+  #fb-box h3{margin:0 0 4px;color:var(--accent);font-size:16px}
+  .fb-sub{margin:0 0 10px;color:var(--dim);font-size:12.5px}
+  #fb-text{width:100%;box-sizing:border-box;resize:vertical;border:1px solid var(--line);
+    border-radius:8px;padding:8px 10px;font:13px/1.4 inherit;background:#fff;color:var(--text)}
+  .fb-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .fb-hint{margin:10px 0 0;color:var(--dim);font-size:11px}
 </style>
 </head>
 <body>
@@ -113,6 +154,25 @@
   </label>
   <span id="song-title"></span>
   <span id="loading-samples">loading sounds&hellip;</span>
+  <nav id="tools-menu">
+    <button id="tools-btn" title="Practice tools">Tools &#9662;</button>
+    <ul id="tools-dd">
+      <li class="has-sub">For beginner &#9666;
+        <ul>
+          <li class="has-sub">Major scale path &#9666;
+            <ul class="scale-list" id="scale-list"></ul>
+          </li>
+          <li class="has-sub">Minor scale path &#9666;
+            <ul class="scale-list" id="scale-list-minor"></ul>
+          </li>
+        </ul>
+      </li>
+      <li class="has-sub">For advanced &#9666;
+        <ul><li class="dim-item">More tools coming soon</li></ul>
+      </li>
+      <li id="mi-feedback" class="menu-sep">Send feedback&hellip;</li>
+    </ul>
+  </nav>
 </header>
 
 <div id="controls">
@@ -160,10 +220,12 @@
     <div class="kb">
       <h3>Left hand (bass) &mdash; <span class="dir" id="dir-left">&mdash;</span></h3>
       <svg id="kb-left"></svg>
+      <div class="lvl-legend" id="legend-left"></div>
     </div>
     <div class="kb">
       <h3>Right hand (treble) &mdash; <span class="dir" id="dir-right">&mdash;</span></h3>
       <svg id="kb-right"></svg>
+      <div class="lvl-legend" id="legend-right"></div>
     </div>
   </div>
 
@@ -182,6 +244,19 @@
 
   <div id="warnings"><h4>&#9888; Notes to watch</h4><ul id="warn-list"></ul></div>
 </main>
+
+<div id="fb-overlay">
+  <div id="fb-box">
+    <h3>Feedback &amp; feature suggestions</h3>
+    <p class="fb-sub">Found a bug, or want a new practice tool? Tell the author directly.</p>
+    <textarea id="fb-text" rows="6" placeholder="What happened, or what would you like to see?"></textarea>
+    <div class="fb-row">
+      <button id="fb-send" class="primary">Send</button>
+      <button id="fb-cancel">Cancel</button>
+    </div>
+    <p class="fb-hint" id="fb-hint"></p>
+  </div>
+</div>
 
 <footer>
   Layout data: Dave Ludlow / Ignacio Irigaray (142-button Rheinische Tonlage) &middot;
@@ -234,6 +309,7 @@ function buildKeyboard(svgId, buttons, hand){
   const svg=document.getElementById(svgId);
   svg.setAttribute("width",W); svg.setAttribute("height",H);
   svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  svg.dataset.w=W; svg.dataset.h=H; // base size, for scale-practice zoom
   buttons.forEach((b,i)=>{
     const cx=(pts[i].x-minX)*SC+PAD, cy=(pts[i].y-minY)*SC+PAD;
     const g=document.createElementNS("http://www.w3.org/2000/svg","g");
@@ -254,12 +330,24 @@ function buildKeyboard(svgId, buttons, hand){
     t2.setAttribute("class","btnlabel2");
     g.appendChild(t1); g.appendChild(t2);
     svg.appendChild(g);
-    kbEls[hand][i]={g,t1,t2,b,sameNote};
+    kbEls[hand][i]={g,t1,t2,b,sameNote,cx,cy};
     g.addEventListener("click",()=>previewButton(hand,i));
   });
+  // arrowhead marker + overlay layer for practice paths (scales etc.)
+  const NS="http://www.w3.org/2000/svg";
+  const defs=document.createElementNS(NS,"defs");
+  defs.innerHTML=LEVEL_COLORS.map((c,i)=>
+    `<marker id="arrow-${svgId}-${i}" viewBox="0 0 10 10" refX="8" refY="5"
+      markerWidth="4.2" markerHeight="4.2" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="${c}"/></marker>`).join("");
+  svg.appendChild(defs);
+  const ov=document.createElementNS(NS,"g");
+  ov.setAttribute("class","scale-overlay");
+  svg.appendChild(ov);
+  scaleOverlays[hand]={g:ov,markerBase:`arrow-${svgId}`};
   refreshLabels();
 }
-function currentDir(){ return S.seq.length ? S.dirs[S.curSeq] : 'open'; }
+function currentDir(){ return S.seq.length ? S.dirs[S.curSeq] : (S.idleDir||'open'); }
 function refreshLabels(){
   const dir=currentDir();
   for(const hand of ["right","left"]){
@@ -275,12 +363,13 @@ function refreshLabels(){
     }
   }
   const sym = d=> d==='close' ? '⊔ closing' : '⊓ opening';
-  document.getElementById("dir-left").textContent = S.seq.length? sym(dir): "—";
-  document.getElementById("dir-right").textContent = S.seq.length? sym(dir): "—";
+  document.getElementById("dir-left").textContent = sym(dir);
+  document.getElementById("dir-right").textContent = sym(dir);
   document.getElementById("dir-left").style.color = dir==='close'? 'var(--close)':'var(--open)';
   document.getElementById("dir-right").style.color = dir==='close'? 'var(--close)':'var(--open)';
   // The flip button always offers the OTHER direction than the keyboard shows.
   document.getElementById("btn-alt").innerHTML = dir==='open' ? '&#8852; Close' : '&#8851; Open';
+  drawScalePaths(); // keep any scale path in sync with the direction shown
 }
 function clearHighlights(){
   for(const hand of ["right","left"]) for(const el of kbEls[hand])
@@ -1028,6 +1117,203 @@ function updateModeButton(){
     : "You set open/close with the flip button or the bellows strip — click for Auto";
 }
 
+/* ============================ PRACTICE TOOLS ============================ */
+const scaleOverlays={};
+const MAJOR_STEPS=[0,2,4,5,7,9,11];
+// one color per octave level, dark to light
+const LEVEL_COLORS=["#8f3b25","#bb6a45","#d99a6f","#ecc39c"];
+const MINOR_STEPS=[0,2,3,5,7,8,10]; // natural minor
+const SCALE_KEYS=[["C",0],["G",7],["D",2],["A",9],["E",4],["B",11],["F♯",6],["D♭",1],["A♭",8],["E♭",3],["B♭",10],["F",5]];
+const MINOR_KEYS=[["A",9],["E",4],["B",11],["F♯",6],["C♯",1],["G♯",8],["E♭",3],["B♭",10],["F",5],["C",0],["G",7],["D",2]];
+function setScalePath(pc,name,steps,kind){
+  S.scalePc=pc; S.scaleName=name;
+  S.scaleSteps=steps||MAJOR_STEPS; S.scaleKind=kind||'maj';
+  S.scaleSel={right:[],left:[]};   // per-hand octave selection
+  applyKbScale(1.25);      // scale practice: no sheet to watch, so grow the charts
+  drawScalePaths(); markScaleMenu();
+}
+function clearScalePath(){
+  S.scalePc=null; S.scaleName=""; S.scaleSteps=null; S.scaleKind=null;
+  S.scaleSel={right:[],left:[]};
+  applyKbScale(1);
+  drawScalePaths(); markScaleMenu();
+}
+function applyKbScale(f){
+  for(const id of ["kb-left","kb-right"]){
+    const svg=document.getElementById(id);
+    if(!svg||!svg.dataset.w) continue;
+    svg.setAttribute("width",svg.dataset.w*f);
+    svg.setAttribute("height",svg.dataset.h*f);
+  }
+}
+function drawScalePaths(){
+  const NS="http://www.w3.org/2000/svg", R=20;
+  const STEPS=S.scaleSteps||MAJOR_STEPS;
+  for(const hand of ["right","left"]){
+    const sel=new Set((S.scaleSel&&S.scaleSel[hand])||[]); // octave picks are PER HAND
+    const ov=scaleOverlays[hand]; if(!ov) continue;
+    ov.g.innerHTML="";
+    kbEls[hand].forEach(el=>el.g.classList.remove("scalestep"));
+    const legend=document.getElementById(hand==='right'?"legend-right":"legend-left");
+    if(S.scalePc==null){ if(legend){legend.innerHTML=""; legend.style.display="none";} continue; }
+    const dir=currentDir();
+    // walk the scale over the WHOLE keyboard range, one color per octave level
+    const lo=hand==='right'?57:36, hi=hand==='right'?95:69;
+    let start=lo+((S.scalePc-lo)%12+12)%12;   // lowest tonic on the keyboard
+    const lvlGroups={}, levelsPresent=[];
+    let prev=null, gap=false;
+    for(let k=0;;k++){
+      const level=Math.floor(k/7), degree=k%7;
+      const midi=start+12*level+STEPS[degree];
+      if(midi>hi) break;
+      const li=Math.min(level,LEVEL_COLORS.length-1);
+      const color=LEVEL_COLORS[li];
+      const idx=MAP[hand][dir][midi];
+      if(idx===undefined){ gap=true; continue; } // note missing in this direction
+      const visible=!sel.size||sel.has(level);
+      if(!lvlGroups[level]){
+        const g=document.createElementNS(NS,"g");
+        g.setAttribute("opacity",visible?"1":"0.13"); // unselected levels fade way back
+        ov.g.appendChild(g); lvlGroups[level]=g; levelsPresent.push(level);
+      }
+      const el=kbEls[hand][idx];
+      if(visible) el.g.classList.add("scalestep");
+      const g=lvlGroups[level];
+      if(prev){
+        const dx=el.cx-prev.cx, dy=el.cy-prev.cy, len=Math.hypot(dx,dy)||1;
+        const ux=dx/len, uy=dy/len;
+        const line=document.createElementNS(NS,"line");
+        line.setAttribute("x1",prev.cx+ux*(R+2)); line.setAttribute("y1",prev.cy+uy*(R+2));
+        line.setAttribute("x2",el.cx-ux*(R+5));  line.setAttribute("y2",el.cy-uy*(R+5));
+        line.setAttribute("stroke",color); line.setAttribute("stroke-width","2.2");
+        line.setAttribute("stroke-linecap","round");
+        // within a level the arrows fade as the scale climbs, so step 1→2 reads darkest
+        line.setAttribute("opacity",Math.max(0.45,1-degree*0.09).toFixed(2));
+        if(gap) line.setAttribute("stroke-dasharray","5 4");
+        line.setAttribute("marker-end",`url(#${ov.markerBase}-${li})`);
+        g.appendChild(line);
+      }
+      // scale-degree badge (1-7), colored by octave level
+      const bc=document.createElementNS(NS,"circle");
+      bc.setAttribute("cx",el.cx-15); bc.setAttribute("cy",el.cy-15); bc.setAttribute("r",7.5);
+      bc.setAttribute("fill",color);
+      const bt=document.createElementNS(NS,"text");
+      bt.setAttribute("x",el.cx-15); bt.setAttribute("y",el.cy-11.8);
+      bt.setAttribute("text-anchor","middle"); bt.setAttribute("font-size","9.5");
+      bt.setAttribute("font-weight","700");
+      bt.setAttribute("fill",level<2?"#fff":"#5b2c17");
+      bt.textContent=degree+1;
+      g.appendChild(bc); g.appendChild(bt);
+      prev=el; gap=false;
+    }
+    // per-keyboard level picker
+    if(legend){
+      legend.style.display="flex"; legend.innerHTML="";
+      const lab=document.createElement("span");
+      lab.className="lvl-lab"; lab.textContent=S.scaleName+" — show octave:";
+      legend.appendChild(lab);
+      for(const L of levelsPresent){
+        const chip=document.createElement("button"); chip.type="button";
+        chip.className="lvl-chip"+((!sel.size||sel.has(L))?" on":"");
+        chip.style.setProperty("--c",LEVEL_COLORS[Math.min(L,LEVEL_COLORS.length-1)]);
+        // label with the REAL octave number of this pass's tonic, matching
+        // the numbers written on the buttons (left: 2,3,4 · right: 3,4,5,6)
+        chip.textContent=Math.floor((start+12*L)/12)-1;
+        chip.title="Show only selected octaves on this keyboard (click several); none selected = show all";
+        chip.addEventListener("click",e=>{
+          e.stopPropagation();
+          if(!S.scaleSel) S.scaleSel={right:[],left:[]};
+          const s=new Set(S.scaleSel[hand]||[]);
+          s.has(L)?s.delete(L):s.add(L);
+          S.scaleSel[hand]=[...s];
+          drawScalePaths();
+        });
+        legend.appendChild(chip);
+      }
+    }
+  }
+}
+function markScaleMenu(){
+  for(const [id,kind] of [["scale-list","maj"],["scale-list-minor","min"]]){
+    [...document.getElementById(id).children].forEach(li=>li.classList.toggle("active-scale",
+      li.dataset.pc!==undefined && S.scalePc!=null && +li.dataset.pc===S.scalePc && S.scaleKind===kind));
+  }
+}
+function closeTools(){
+  document.getElementById("tools-menu").classList.remove("open");
+  document.querySelectorAll("#tools-menu li.open").forEach(l=>l.classList.remove("open"));
+}
+{
+  function fillScaleList(ulId,keys,steps,kind,suffix){
+    const sl=document.getElementById(ulId);
+    const clearLi=document.createElement("li");
+    clearLi.textContent="✕ Clear path";
+    clearLi.addEventListener("click",e=>{ e.stopPropagation(); clearScalePath(); closeTools(); });
+    sl.appendChild(clearLi);
+    for(const [name,pc] of keys){
+      const li=document.createElement("li");
+      li.textContent=name+suffix; li.dataset.pc=pc;
+      li.addEventListener("click",e=>{ e.stopPropagation(); setScalePath(pc,name+suffix,steps,kind); closeTools(); });
+      sl.appendChild(li);
+    }
+  }
+  fillScaleList("scale-list",SCALE_KEYS,MAJOR_STEPS,"maj"," major");
+  fillScaleList("scale-list-minor",MINOR_KEYS,MINOR_STEPS,"min"," minor");
+  document.getElementById("tools-btn").addEventListener("click",e=>{
+    e.stopPropagation();
+    document.getElementById("tools-menu").classList.toggle("open");
+  });
+  // touch support: tapping a submenu header toggles it
+  document.querySelectorAll("#tools-menu li.has-sub").forEach(li=>{
+    li.addEventListener("click",e=>{ if(e.target===li){ e.stopPropagation(); li.classList.toggle("open"); } });
+  });
+  document.addEventListener("click",()=>closeTools());
+
+  // feedback dialog — lands on the project's public suggestion board
+  const fbOverlay=document.getElementById("fb-overlay");
+  const fbText=document.getElementById("fb-text");
+  document.getElementById("mi-feedback").addEventListener("click",e=>{
+    e.stopPropagation(); closeTools();
+    fbOverlay.classList.add("show"); fbText.focus();
+  });
+  const fbHide=()=>fbOverlay.classList.remove("show");
+  document.getElementById("fb-cancel").addEventListener("click",fbHide);
+  fbOverlay.addEventListener("click",e=>{ if(e.target===fbOverlay) fbHide(); });
+  // Direct delivery via Web3Forms (message lands in the author's inbox).
+  // Empty key = fall back to the public suggestion page.
+  const FB_KEY="e5deef94-163c-4e3b-aa09-0e1359c094a1";
+  const fbDirect=FB_KEY&&!FB_KEY.startsWith("__");
+  document.getElementById("fb-hint").textContent=fbDirect
+    ? "Your message goes straight to the site author. No account needed."
+    : "A public suggestion page opens with your message filled in — press the submit button there and you're done.";
+  const fbFallback=msg=>{
+    const body=encodeURIComponent(msg+"\n\n— sent from bandoneonsim.com");
+    window.open(`https://github.com/XiaonanHu/bandoneonsim/issues/new?title=${encodeURIComponent("Feedback")}&body=${body}`,"_blank");
+    fbHide();
+  };
+  document.getElementById("fb-send").addEventListener("click",async function(){
+    const msg=fbText.value.trim();
+    if(!msg){ fbHide(); return; }
+    if(!fbDirect){ fbFallback(msg); return; }
+    this.disabled=true; this.textContent="Sending…";
+    try{
+      const r=await fetch("https://api.web3forms.com/submit",{
+        method:"POST",
+        headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({access_key:FB_KEY,subject:"Bandoneon Simulator feedback",
+          from_name:"bandoneonsim.com visitor",message:msg})});
+      const j=await r.json();
+      if(!j.success) throw new Error("relay refused");
+      this.textContent="Sent — thank you!";
+      fbText.value="";
+      setTimeout(()=>{ fbHide(); this.textContent="Send"; this.disabled=false; },1200);
+    }catch(err){
+      this.textContent="Send"; this.disabled=false;
+      fbFallback(msg); // network blocked or relay down: public page still works
+    }
+  });
+}
+
 /* ============================ WIRING ============================ */
 document.getElementById("file-input").addEventListener("change",e=>{
   if(e.target.files[0]) loadFile(e.target.files[0]);
@@ -1058,7 +1344,13 @@ document.getElementById("btn-mode").addEventListener("click",()=>setMode(S.mode=
 // Manual bellows flip: keyboard starts in opening, so the button offers "Close".
 // Each click flips the whole piece's direction and the label shows the next flip.
 document.getElementById("btn-alt").addEventListener("click",()=>{
-  if(!S.seq.length) return;
+  if(!S.seq.length){
+    // No score loaded: still let people flip between the opening and
+    // closing keyboard charts.
+    S.idleDir = (S.idleDir||'open')==='open' ? 'close' : 'open';
+    refreshLabels();
+    return;
+  }
   setMode('manual');
   const newDir = currentDir()==='open' ? 'close' : 'open';
   S.dirs=S.seq.map(()=>newDir);
