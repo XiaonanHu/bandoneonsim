@@ -190,6 +190,10 @@
     <button id="btn-mode" class="toggled" title="Bellows mode — click to switch">Manual</button>
     <button id="btn-alt" title="Flip the bellows direction for the whole piece">&#8852; Close</button>
   </div>
+  <div class="ctl-group" id="autochord-group" style="display:none">
+    <button id="btn-autochord" class="toggled"
+      title="This score has chord symbols but no left-hand notes — play a bass + chord accompaniment from the symbols">Auto bass</button>
+  </div>
   <div class="ctl-group">
     <button id="btn-sheet" class="toggled" disabled title="Show or hide the score">Sheet</button>
   </div>
@@ -525,7 +529,12 @@ function parseScore(xmlText){
               let kind=kindEl?.getAttribute("text");
               if(kind==null||kind==="") kind=KIND_MAP[kindEl?.textContent?.trim()] ?? (kindEl?.textContent?.trim()||"");
               const acc=alt>0?"#".repeat(alt):(alt<0?"b".repeat(-alt):"");
-              M.harmony.push({pos:cur,text:step+acc+kind});
+              const bstep=el.querySelector("bass > bass-step")?.textContent;
+              const balt=+(el.querySelector("bass > bass-alter")?.textContent||0);
+              M.harmony.push({pos:cur,text:step+acc+kind+(bstep?"/"+bstep+(balt>0?"#":(balt<0?"b":"")):""),
+                rootPc:((STEP_SEMIS[step]+alt)%12+12)%12,
+                bassPc:bstep?(((STEP_SEMIS[bstep]+balt)%12+12)%12):null,
+                kindName:kindEl?.textContent?.trim()||"major"});
             }
             break;
           }
@@ -649,7 +658,9 @@ function buildTimeline(){
     const mStart=t;
     const mEnd=timeAt(M.length);
     const item={mIdx,seqIdx:sIdx,start:mStart,end:mEnd,number:M.number,
-      harmony:M.harmony.map(h=>({t:timeAt(h.pos),text:h.text})),keyFifths:M.keyFifths};
+      quarters:M.length/M.divisions,
+      harmony:M.harmony.map(h=>({t:timeAt(h.pos),text:h.text,rootPc:h.rootPc,bassPc:h.bassPc,kindName:h.kindName})),
+      keyFifths:M.keyFifths};
     seq.push(item);
     for(const n of M.notes){
       const hand=n.staff>=2?'left':'right';
@@ -673,6 +684,54 @@ function buildTimeline(){
   });
   events.sort((a,b)=>a.t-b.t);
   S.seq=seq; S.events=events;
+  // If the score has chord symbols but (almost) no written left hand,
+  // synthesize a practice accompaniment from the symbols.
+  const leftCount=events.filter(e=>e.hand==='left').length;
+  const harmonyCount=seq.reduce((n,it)=>n+it.harmony.length,0);
+  S.genEvents=(harmonyCount>0&&leftCount<=2)?genAccompaniment(seq):[];
+}
+/* Generated left hand: tango marcato — root on 1, chord on 2, fifth on 3,
+   chord on 4 (2/4 and 3/4 patterns accordingly). */
+function chordIntervals(kindName){
+  const k=kindName||"major";
+  const minorish=/^(minor|diminished|half-diminished)/.test(k);
+  const third=/^suspended-fourth/.test(k)?5:(/^suspended-second/.test(k)?2:(minorish?3:4));
+  const fifth=/^(diminished|half-diminished)/.test(k)?6:(/^augmented/.test(k)?8:7);
+  let seventh=null;
+  if(/^(dominant|minor-seventh|minor-ninth|dominant-ninth|half-diminished)/.test(k)) seventh=10;
+  else if(/^(major-seventh|major-ninth)/.test(k)) seventh=11;
+  else if(/^diminished-seventh/.test(k)) seventh=9;
+  return {third,fifth,seventh};
+}
+function genAccompaniment(seq){
+  const out=[]; let cur=null;
+  for(const item of seq){
+    const hs=[...item.harmony].sort((a,b)=>a.t-b.t);
+    const Q=Math.max(1,Math.round(item.quarters));
+    const beat=(item.end-item.start)/Q;
+    let hi=0;
+    for(let q=0;q<Q;q++){
+      const bt=item.start+q*beat;
+      while(hi<hs.length&&hs[hi].t<=bt+1e-3){ if(hs[hi].rootPc!=null) cur=hs[hi]; hi++; }
+      if(!cur) continue;
+      const {third,fifth,seventh}=chordIntervals(cur.kindName);
+      const bassRootPc=cur.bassPc!=null?cur.bassPc:cur.rootPc; // slash chords: written bass wins
+      const bass=40+((bassRootPc-4+12)%12);           // E2..D#3 — playable in BOTH directions
+      const pitches=[];
+      if(q%2===0){                                    // beats 1,3,...: bass note
+        // alternate root/fifth on beat 3, except slash chords keep their written bass
+        pitches.push(q===2&&Q>=4&&cur.bassPc==null?bass+fifth:bass);
+      }else{                                          // beats 2,4,...: chord
+        const c0=50+((cur.rootPc-2+12)%12);           // root D3..C#4
+        const set=new Set([c0,c0+third,c0+fifth]);
+        if(seventh!=null) set.add(c0+seventh);
+        for(let p of set) pitches.push(p>69?p-12:p);
+      }
+      for(const midi of [...new Set(pitches)])
+        out.push({t:bt,dur:Math.max(0.1,beat*0.5),midi,hand:'left',seqIdx:item.seqIdx,gen:true});
+    }
+  }
+  return out;
 }
 
 /* ------------- bellows helpers ------------- */
@@ -784,7 +843,7 @@ function schedulerTick(){
     // Short notes get a minimum sounding length (~0.32s) so they are clearly
     // audible, even if that overlaps the next note slightly.
     const sounding=Math.max(e.dur*0.98, MIN_SOUND);
-    if(when>=now()-0.02) playNote(e.midi,Math.max(when,now()),sounding,e.hand==='left'?0.75:0.95);
+    if(when>=now()-0.02) playNote(e.midi,Math.max(when,now()),sounding,e.gen?0.6:(e.hand==='left'?0.75:0.95));
   }
   // loop / end handling
   if(S.loopBar){
@@ -836,12 +895,20 @@ function seekTo(sIdx){
   refreshLabels(); highlightMeasure(); updateSheetCursor(true); updateNowPlaying([]);
 }
 // tempo scaling: rebuild event times scaled from the raw timeline
-let rawSeq=null, rawEvents=null;
-function snapshotRaw(){ rawSeq=S.seq.map(x=>({...x,harmony:x.harmony.map(h=>({...h}))})); rawEvents=S.events.map(e=>({...e})); }
+let rawSeq=null, rawEvents=null, rawGenEvents=null;
+function snapshotRaw(){
+  rawSeq=S.seq.map(x=>({...x,harmony:x.harmony.map(h=>({...h}))}));
+  rawEvents=S.events.map(e=>({...e}));
+  rawGenEvents=(S.genEvents||[]).map(e=>({...e}));
+}
 function rebuildScaled(){
   const k=1/S.tempoScale;
-  S.seq=rawSeq.map(x=>({...x,start:x.start*k,end:x.end*k,harmony:x.harmony.map(h=>({t:h.t*k,text:h.text}))}));
+  S.seq=rawSeq.map(x=>({...x,start:x.start*k,end:x.end*k,harmony:x.harmony.map(h=>({...h,t:h.t*k}))}));
   S.events=rawEvents.map(e=>({...e,t:e.t*k,dur:e.dur*k}));
+  if(S.autoChords&&rawGenEvents&&rawGenEvents.length){
+    S.events=S.events.concat(rawGenEvents.map(e=>({...e,t:e.t*k,dur:e.dur*k})))
+      .sort((a,b)=>a.t-b.t);
+  }
   // keep position proportional
 }
 
@@ -1083,6 +1150,11 @@ function autoDirections(){ return hasBowMarks()? bowDirections() : suggestDirect
 function setupPart(){
   stopPlayback();
   buildTimeline();
+  // Auto accompaniment defaults ON when the score offers only chord symbols.
+  S.autoChords=S.genEvents.length>0;
+  const acg=document.getElementById("autochord-group");
+  acg.style.display=S.genEvents.length?"flex":"none";
+  document.getElementById("btn-autochord").classList.toggle("toggled",S.autoChords);
   snapshotRaw();
   rebuildScaled();
   // Bow marks in the score select Auto automatically; otherwise Manual.
@@ -1348,6 +1420,14 @@ document.getElementById("btn-alt").addEventListener("click",()=>{
   const newDir = currentDir()==='open' ? 'close' : 'open';
   S.dirs=S.seq.map(()=>newDir);
   updateAllStripCells(); refreshLabels(); updateWarnings(); updateNowPlaying([]);
+  if(S.playing) rescheduleFromCurrent();
+});
+document.getElementById("btn-autochord").addEventListener("click",function(){
+  S.autoChords=!S.autoChords;
+  this.classList.toggle("toggled",S.autoChords);
+  const frac=totalDur()?scoreTime()/totalDur():0;
+  rebuildScaled();
+  updateWarnings(); updateAllStripCells(); refreshLabels();
   if(S.playing) rescheduleFromCurrent();
 });
 document.getElementById("part-select").addEventListener("change",function(){
