@@ -1230,7 +1230,7 @@ function drawScalePaths(){
     // walk the scale over the WHOLE keyboard range, one color per octave level
     const lo=hand==='right'?57:36, hi=hand==='right'?95:69;
     let start=lo+((S.scalePc-lo)%12+12)%12;   // lowest tonic on the keyboard
-    const lvlGroups={}, levelsPresent=[];
+    const lvlGroups={}, levelsPresent=[], badges=[];
     let prev=null, gap=false;
     for(let k=0;;k++){
       const level=Math.floor(k/7), degree=k%7;
@@ -1263,19 +1263,33 @@ function drawScalePaths(){
         line.setAttribute("marker-end",`url(#${ov.markerBase}-${li})`);
         g.appendChild(line);
       }
-      // scale-degree badge (1-7), colored by octave level
-      const bc=document.createElementNS(NS,"circle");
-      bc.setAttribute("cx",el.cx-15); bc.setAttribute("cy",el.cy-15); bc.setAttribute("r",7.5);
-      bc.setAttribute("fill",color);
-      const bt=document.createElementNS(NS,"text");
-      bt.setAttribute("x",el.cx-15); bt.setAttribute("y",el.cy-11.8);
-      bt.setAttribute("text-anchor","middle"); bt.setAttribute("font-size","9.5");
-      bt.setAttribute("font-weight","700");
-      bt.setAttribute("fill",level<2?"#fff":"#5b2c17");
-      bt.textContent=degree+1;
-      g.appendChild(bc); g.appendChild(bt);
+      // badge drawn after the loop, when we know which tonic ends the path
+      badges.push({el,g,color,level,degree});
       prev=el; gap=false;
     }
+    // Scale-degree badges 1..8 per octave: the shared tonic between two
+    // octaves reads "8·1" (it is 8 of the lower octave and 1 of the next);
+    // the final tonic of the range reads "8".
+    badges.forEach((b,i)=>{
+      let label;
+      if(b.degree!==0) label=String(b.degree+1);
+      else if(b.level===0||i===0) label="1";
+      else if(i===badges.length-1) label="8";
+      else label="8·1";
+      const wide=label.length>1&&label!=="8";
+      const bc=document.createElementNS(NS,"circle");
+      bc.setAttribute("cx",b.el.cx-15); bc.setAttribute("cy",b.el.cy-15);
+      bc.setAttribute("r",wide?9:7.5);
+      bc.setAttribute("fill",b.color);
+      const bt=document.createElementNS(NS,"text");
+      bt.setAttribute("x",b.el.cx-15); bt.setAttribute("y",b.el.cy-(wide?12.3:11.8));
+      bt.setAttribute("text-anchor","middle");
+      bt.setAttribute("font-size",wide?"7.5":"9.5");
+      bt.setAttribute("font-weight","700");
+      bt.setAttribute("fill",b.level<2?"#fff":"#5b2c17");
+      bt.textContent=label;
+      b.g.appendChild(bc); b.g.appendChild(bt);
+    });
     // per-keyboard level picker
     if(legend){
       legend.style.display="flex"; legend.innerHTML="";
