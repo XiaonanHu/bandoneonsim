@@ -75,6 +75,9 @@
   .mcell{min-width:46px;text-align:center;font-size:11px;color:var(--dim);
     border-left:1px solid var(--line);padding:1px 3px;cursor:pointer;user-select:none}
   .mcell.playing{background:#dcedc8;color:#33691e}
+  .mcell.looped{background:#f5e0cf;box-shadow:inset 0 -2px 0 var(--accent)}
+  #loop-from,#loop-to{width:54px;background:#fff;border:1px solid var(--line);
+    border-radius:6px;padding:4px 6px;font:13px inherit;color:var(--text)}
   .mcell .chord{color:var(--accent);font-size:10px;min-height:13px;display:block;white-space:nowrap}
   .mcell .warnflag{color:var(--warn);font-size:10px;min-height:12px;display:block}
   .bcell{min-width:46px;text-align:center;cursor:pointer;user-select:none;
@@ -174,7 +177,11 @@
     <button id="btn-stop" disabled>&#9632; Stop</button>
     <button id="btn-prev" disabled title="previous measure">&#8676;</button>
     <button id="btn-next" disabled title="next measure">&#8677;</button>
-    <button id="btn-loop" disabled title="loop current measure">Loop bar</button>
+    <button id="btn-loop" disabled title="Loop one bar or a range of bars">Loop</button>
+    <span id="loop-range" style="display:none;align-items:center;gap:5px">
+      <span class="lbl">bars</span><input type="number" id="loop-from" min="1">
+      <span class="lbl">to</span><input type="number" id="loop-to" min="1">
+    </span>
   </div>
   <div class="ctl-group">
     <span class="lbl">Tempo</span>
@@ -281,7 +288,7 @@ const S = {
   events:[],        // flattened timed events {t,dur,midi,hand,seqIdx,grace}
   dirs:[],          // bellows per seq measure: 'open'|'close'
   mode:'manual',
-  playing:false, startedAt:0, pausedAt:0, loopBar:false, loopSeq:0,
+  playing:false, startedAt:0, pausedAt:0, loopBar:false, loopA:0, loopB:0,
   tempoScale:1, curSeq:0,
   buffers:{}, ctx:null, master:null, activeSrcs:new Set(),
   useFlats:false,
@@ -843,7 +850,7 @@ function schedulerTick(){
   if(!S.playing) return;
   while(schedPtr<S.events.length && S.events[schedPtr].t<=scoreTime()+LOOKAHEAD){
     const e=S.events[schedPtr++];
-    if(S.loopBar && e.seqIdx!==S.loopSeq){ continue; }
+    if(S.loopBar && (e.seqIdx<S.loopA||e.seqIdx>S.loopB)){ continue; }
     const when=S.startedAt+(e.t-playOffset);
     // Short notes get a minimum sounding length (~0.32s) so they are clearly
     // audible, even if that overlaps the next note slightly.
@@ -852,9 +859,8 @@ function schedulerTick(){
   }
   // loop / end handling
   if(S.loopBar){
-    const item=S.seq[S.loopSeq];
-    if(scoreTime()>=item.end-0.01){
-      startAt(item.start);
+    if(scoreTime()>=S.seq[S.loopB].end-0.01){
+      startAt(S.seq[S.loopA].start);
       return;
     }
   } else if(scoreTime()>=totalDur()+0.3){
@@ -877,7 +883,11 @@ async function play(){
   if(S.playing){ pause(); return; }
   // apply tempo scale: we time-stretch by rebuilding scaled events
   rebuildScaled();
-  startAt(S.pausedAt||0);
+  // if a loop is set and the playhead sits outside it, start at the loop
+  let t0=S.pausedAt||0;
+  if(S.loopBar&&(t0<S.seq[S.loopA].start-0.01||t0>=S.seq[S.loopB].end-0.01))
+    t0=S.seq[S.loopA].start;
+  startAt(t0);
   document.getElementById("btn-play").innerHTML="&#10073;&#10073; Pause";
   rafLoop();
 }
@@ -895,7 +905,7 @@ function rescheduleFromCurrent(){ if(S.playing){ const t=scoreTime(); startAt(t,
 function seekTo(sIdx){
   const item=S.seq[sIdx]; if(!item) return;
   S.curSeq=sIdx; S.pausedAt=item.start;
-  if(S.loopBar) S.loopSeq=sIdx;
+  loopFollowSeek(sIdx);
   if(S.playing) startAt(item.start,true);
   refreshLabels(); highlightMeasure(); updateSheetCursor(true); updateNowPlaying([]);
 }
@@ -948,7 +958,7 @@ function updateNowPlaying(active){
 function rafLoop(){
   if(!S.playing) return;
   const t=scoreTime();
-  const sIdx=S.loopBar?S.loopSeq:currentSeqIdxAt(t);
+  const sIdx=S.loopBar?Math.min(Math.max(currentSeqIdxAt(t),S.loopA),S.loopB):currentSeqIdxAt(t);
   if(sIdx!==S.curSeq){ S.curSeq=sIdx; refreshLabels(); highlightMeasure(); }
   applyActiveAt(t);
   updateSheetCursor(false);
@@ -1072,7 +1082,7 @@ function seekToStep(step){
   const M=S.score.parts[S.partIdx].measures[item.mIdx];
   const frac=Math.min(1, step.rel*4*M.divisions/Math.max(1,M.length));
   const t=item.start+frac*(item.end-item.start);
-  S.curSeq=sIdx; if(S.loopBar) S.loopSeq=sIdx;
+  S.curSeq=sIdx; loopFollowSeek(sIdx);
   S.pausedAt=t;
   if(S.playing) startAt(t);
   refreshLabels(); highlightMeasure(); updateSheetCursor(true);
@@ -1154,6 +1164,10 @@ function bowDirections(){
 function autoDirections(){ return hasBowMarks()? bowDirections() : suggestDirections(); }
 function setupPart(){
   stopPlayback();
+  // new score: clear any loop from the previous one
+  S.loopBar=false;
+  document.getElementById("btn-loop").classList.remove("toggled");
+  document.getElementById("loop-range").style.display="none";
   buildTimeline();
   // Auto accompaniment defaults ON when the score offers only chord symbols.
   S.autoChords=S.genEvents.length>0;
@@ -1409,9 +1423,61 @@ document.getElementById("btn-play").addEventListener("click",play);
 document.getElementById("btn-stop").addEventListener("click",()=>{stopPlayback();seekTo(0);});
 document.getElementById("btn-prev").addEventListener("click",()=>seekTo(Math.max(0,S.curSeq-1)));
 document.getElementById("btn-next").addEventListener("click",()=>seekTo(Math.min(S.seq.length-1,S.curSeq+1)));
+/* ---- loop a bar or a range of bars ---- */
+function syncLoopInputs(){
+  document.getElementById("loop-from").value=S.seq[S.loopA]?.number??"";
+  document.getElementById("loop-to").value=S.seq[S.loopB]?.number??"";
+}
+function updateLoopHighlight(){
+  document.querySelectorAll(".mcell.looped").forEach(el=>el.classList.remove("looped"));
+  if(!S.loopBar) return;
+  for(let i=S.loopA;i<=S.loopB;i++) document.getElementById("mc"+i)?.classList.add("looped");
+}
+// Jumping to a bar outside the looped range moves the loop to that single bar;
+// jumping within the range just restarts there.
+function loopFollowSeek(sIdx){
+  if(!S.loopBar) return;
+  if(sIdx<S.loopA||sIdx>S.loopB){
+    S.loopA=S.loopB=sIdx;
+    syncLoopInputs(); updateLoopHighlight();
+  }
+}
+function applyLoopInputs(){
+  if(!S.loopBar||!S.seq.length) return;
+  const nums=S.seq.map(it=>+it.number);
+  const lo=Math.min(...nums), hi=Math.max(...nums);
+  const fe=document.getElementById("loop-from"), te=document.getElementById("loop-to");
+  let a=Math.max(lo,Math.min(hi,+fe.value||lo));
+  let b=Math.max(lo,Math.min(hi,+te.value||hi));
+  if(b<a) b=a;
+  let ia=S.seq.findIndex(it=>+it.number===a);
+  if(ia<0) ia=0;
+  let ib=-1;
+  for(let i=ia;i<S.seq.length;i++) if(+S.seq[i].number===b){ ib=i; break; }
+  if(ib<0) ib=ia;
+  S.loopA=ia; S.loopB=ib;
+  fe.value=S.seq[ia].number; te.value=S.seq[ib].number;
+  updateLoopHighlight();
+  if(S.playing){
+    const t=scoreTime();
+    if(t<S.seq[ia].start-0.01||t>S.seq[ib].end) startAt(S.seq[ia].start);
+  }else if(S.pausedAt<S.seq[ia].start-0.01||S.pausedAt>S.seq[ib].end){
+    // paused outside the new range: move the playhead to the loop start
+    S.curSeq=ia; S.pausedAt=S.seq[ia].start;
+    refreshLabels(); highlightMeasure(); updateSheetCursor(true);
+  }
+}
+document.getElementById("loop-from").addEventListener("change",applyLoopInputs);
+document.getElementById("loop-to").addEventListener("change",applyLoopInputs);
 document.getElementById("btn-loop").addEventListener("click",function(){
   S.loopBar=!S.loopBar; this.classList.toggle("toggled",S.loopBar);
-  if(S.loopBar){ S.loopSeq=S.curSeq; if(S.playing) startAt(S.seq[S.loopSeq].start); }
+  document.getElementById("loop-range").style.display=S.loopBar?"inline-flex":"none";
+  if(S.loopBar){
+    S.loopA=S.loopB=S.curSeq;
+    syncLoopInputs();
+    if(S.playing) startAt(S.seq[S.loopA].start);
+  }
+  updateLoopHighlight();
 });
 document.getElementById("tempo").addEventListener("input",function(){
   document.getElementById("tempo-val").textContent=this.value+"%";
